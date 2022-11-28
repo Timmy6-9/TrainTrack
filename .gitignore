@@ -1,0 +1,3 @@
+**/node_modules
+./mvmt_msg_service/old
+**/*.geojson
