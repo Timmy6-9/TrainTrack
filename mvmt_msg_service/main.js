@@ -25,7 +25,6 @@ function ipv4(address) {
 
 const { WebSocketServer } = require("ws");
 const wss = new WebSocketServer({ port: 443 });
-
 console.log(`Socket Server Started & Listening`);
 
 const addressUserMap = new Map();
@@ -109,7 +108,7 @@ connectionManager.connect(function (error, client, reconnect) {
                                 // If reporting_stanox is 00000 (manual or off-route), use loc_stanox
                                 if(item.body.reporting_stanox != '00000'){
                                     returnLocation(item.body.reporting_stanox, function(result){
-                                        const msgObj = {id: item.body.train_id, name: result.Name, lat: result.Latitude, long: result.Longitude, type: item.body.event_type, msgType: 'Current'}
+                                        const msgObj = {id: item.body.train_id, name: result.Name, lat: result.Latitude, long: result.Longitude, type: item.body.event_type, msgType: 'Current', offset: 25}
                                         wss.clients.forEach(function each(client){
                                             client.send(JSON.stringify(msgObj));
                                         });
@@ -125,7 +124,7 @@ connectionManager.connect(function (error, client, reconnect) {
                                 }
                                 else{
                                     returnLocation(item.body.loc_stanox, function(result){
-                                        const msgObj = {id: item.body.train_id, name: result.Name, lat: result.Latitude, long: result.Longitude, type: item.body.event_type, msgType: 'Current'}
+                                        const msgObj = {id: item.body.train_id, name: result.Name, lat: result.Latitude, long: result.Longitude, type: item.body.event_type, msgType: 'Current', offset: 25}
                                         wss.clients.forEach(function each(client){
                                             client.send(JSON.stringify(msgObj));
                                         });
@@ -143,7 +142,7 @@ connectionManager.connect(function (error, client, reconnect) {
                             else{
                                 if(item.body.reporting_stanox != '00000'){
                                     returnLocation(item.body.reporting_stanox, function(result){
-                                        const msgObj = {id: item.body.train_id, name: result.Name, lat: result.Latitude, long: result.Longitude, type: item.body.event_type, terminated: item.body.train_terminated, msgType: 'Current'}
+                                        const msgObj = {id: item.body.train_id, name: result.Name, lat: result.Latitude, long: result.Longitude, type: item.body.event_type, terminated: item.body.train_terminated, msgType: 'Current', offset: 25}
                                         wss.clients.forEach(function each(client){
                                             client.send(JSON.stringify(msgObj));
                                         });
@@ -151,15 +150,15 @@ connectionManager.connect(function (error, client, reconnect) {
                                 }
                                 else{
                                     returnLocation(item.body.loc_stanox, function(result){
-                                        const msgObj = {id: item.body.train_id, name: result.Name, lat: result.Latitude, long: result.Longitude, type: item.body.event_type, terminated: item.body.train_terminated, msgType: 'Current'}
+                                        const msgObj = {id: item.body.train_id, name: result.Name, lat: result.Latitude, long: result.Longitude, type: item.body.event_type, terminated: item.body.train_terminated, msgType: 'Current', offset: 25}
                                         wss.clients.forEach(function each(client){
                                             client.send(JSON.stringify(msgObj));
                                         });
                                         });
                                     }
-                                }
                             }
-                            next();
+                        }
+                        next();
                         }
                     );
                 }
