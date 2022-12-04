@@ -15,26 +15,13 @@ import Point from 'ol/geom/Point';
 
 useGeographic();
 
-var persFileArr = [];
-var newFileArr = [];
-var counter = 0;
+var locations = "";
 
 // IT DOES NOT MATTER WHAT TYPE OF FILE USED BUT ONLY GIVE CO-ORDINATES AS FLOAT TYPES | LONG FIRST THEN LAT
 var source = new VectorSource({
   url: URL.createObjectURL(new File([],{type: "application/json"})),
   format: new GeoJSON()
 });
-
-/*
-  'circles-zoom': {
-    symbol: {
-      symbolType: 'circle',
-      size: ['interpolate', ['exponential', 2.5], ['zoom'], 2, 1, 14, 32],
-      color: ['match', ['get', 'hover'], 1, '#ff3f3f', '#006688'],
-      offset: [0, 0],
-      opacity: 0.95,
-    }
-*/
 
 function pointStyleFunction(feature) {
   return new Style({
@@ -69,42 +56,113 @@ const map = new Map({
     center: [-0.0599408, 51.5196195],
     zoom: 15,
   }),
-});
+})
 
 ws.onopen = function() {
   ws.send("Register");
   console.log('Websocket Connection Registered');
-};
+}
 
 ws.onmessage = function (event) {
-
-  const msgObj = (JSON.parse(event.data));
-
-  const fileObj = {
-    "type": "Feature",
-    "geometry": {
-      "type": "Point",
-      "coordinates": [msgObj.long, msgObj.lat]
-    },
-    "properties": {
-      "name": msgObj.name,
-      "id": msgObj.id,
-      "type": msgObj.type,
-      "offset": checkOffset(msgObj)
-    },
-  }
-
-  newFileArr[counter] = JSON.stringify(fileObj);
-  counter++;
-};
-
-// Need to use filter for both otherwise entries will be pushed constantly
-function replaceByID(item){
-  persFileArr = persFileArr.filter(function(obj){
-    return JSON.parse(obj).properties.id !== JSON.parse(item).properties.id;
-  });
-  persFileArr.push(item);
+  locations = event.data;
 }
+
+function newPoints(){
+  if(locations != ""){
+    const jsonFile = '{"type": "FeatureCollection", "features": ' + locations + '}';
+    console.log(jsonFile);
+    const file = new File([jsonFile], {type: "application/json",});
+    URL.revokeObjectURL(source.getUrl());
+    source.setUrl(URL.createObjectURL(file));
+    source.refresh();
+    map.render();
+  }
+  setTimeout(function() {newPoints()}, 10000);
+}
+
+newPoints();
+
+// Popup labels code, not mine.
+const element = document.getElementById('popup');
+
+const popup = new Overlay({
+  element: element,
+  positioning: 'bottom-center',
+  stopEvent: false,
+});
+
+map.addOverlay(popup);
+
+let popover;
+function disposePopover() {
+  if (popover) {
+    popover.dispose();
+    popover = undefined;
+  }
+}
+// display popup on click
+map.on('click', function (evt) {
+  const feature = map.forEachFeatureAtPixel(evt.pixel, function (feature) {
+    return feature;
+  });
+  disposePopover();
+  if (!feature) {
+    return;
+  }
+  popup.setPosition(evt.coordinate);
+  popover = new bootstrap.Popover(element, {
+    placement: 'right',
+    html: true,
+    content: "<p> Details <br>Location: " + "<code>" + feature.get('name') + "</code>" + "<br>Next Stop: " + "<code>" + feature.get('nextStop') + "</code></p>"
+  });
+  popover.show();
+});
+
+// change mouse cursor when over marker
+map.on('pointermove', function (e) {
+  const pixel = map.getEventPixel(e.originalEvent);
+  const hit = map.hasFeatureAtPixel(pixel);
+  map.getTarget().style.cursor = hit ? 'pointer' : '';
+});
+// Close the popup when the map is moved
+map.on('movestart', disposePopover);
+
+
+
+// Unused but kept just in case
+
+/*
+var trainLayer = new WebGLPointsLayer({
+  source: source,
+  style: ({
+    symbol: {
+    symbolType: 'circle',
+    size: 14,
+    color: 'rgb(255, 0, 0)',
+    opacity: 0.5
+    }
+  })
+});
+
+Small black circle for points
+
+image: new Circle({
+  fill: new Fill({color: 'rgba(0, 0, 0, 1)'}),
+  stroke: new Stroke({color: 'rgba(0, 0, 0, 1)'}),
+  radius: 5,
+}),
+*/
+
+/*
+  'circles-zoom': {
+    symbol: {
+      symbolType: 'circle',
+      size: ['interpolate', ['exponential', 2.5], ['zoom'], 2, 1, 14, 32],
+      color: ['match', ['get', 'hover'], 1, '#ff3f3f', '#006688'],
+      offset: [0, 0],
+      opacity: 0.95,
+    }
+*/
 
 /*
 function checkOffset(msgItem){
@@ -147,7 +205,7 @@ function checkOffset(msgItem){
     return (15 * (howLongNew.length + howLong.length));
   }
   else if (howLongNew.length == 0 && howLong.length > 0){
-    filter 
+    filter
     //if(){}
     //else{return (15 * (howLong.length))};
   }
@@ -158,98 +216,4 @@ function checkOffset(msgItem){
     console.log("EDGE CASE DETECTED: " + howLong.length + "," + howLongNew.length);
   }
 }
-*/
-
-function newPoints(){
-  if(newFileArr != []){
-  newFileArr.forEach(replaceByID);
-    if(persFileArr != []){
-      const jsonFile = '{"type": "FeatureCollection", "features": [' + persFileArr + ']}';
-
-      const file = new File([jsonFile], {type: "application/json",});
-
-      URL.revokeObjectURL(source.getUrl());
-
-      source.setUrl(URL.createObjectURL(file));
-
-      newFileArr = [];
-      counter = 0;
-      source.refresh();
-      map.render();
-    }
-  }
-  setTimeout(function() {newPoints()}, 10000);
-}
-
-newPoints();
-
-// Popup labels code, not mine.
-const element = document.getElementById('popup');
-
-const popup = new Overlay({
-  element: element,
-  positioning: 'bottom-center',
-  stopEvent: false,
-});
-
-map.addOverlay(popup);
-
-let popover;
-function disposePopover() {
-  if (popover) {
-    popover.dispose();
-    popover = undefined;
-  }
-}
-// display popup on click
-map.on('click', function (evt) {
-  const feature = map.forEachFeatureAtPixel(evt.pixel, function (feature) {
-    return feature;
-  });
-  disposePopover();
-  if (!feature) {
-    return;
-  }
-  popup.setPosition(evt.coordinate);
-  popover = new bootstrap.Popover(element, {
-    placement: 'right',
-    html: true,
-    content: "<p> The location you clicked was: <br>" + "<code>" + feature.get('name') + "</code></p>"
-  });
-  popover.show();
-});
-
-// change mouse cursor when over marker
-map.on('pointermove', function (e) {
-  const pixel = map.getEventPixel(e.originalEvent);
-  const hit = map.hasFeatureAtPixel(pixel);
-  map.getTarget().style.cursor = hit ? 'pointer' : '';
-});
-// Close the popup when the map is moved
-map.on('movestart', disposePopover);
-
-
-
-// Unused but kept just in case
-
-/*
-var trainLayer = new WebGLPointsLayer({
-  source: source,
-  style: ({
-    symbol: {
-    symbolType: 'circle',
-    size: 14,
-    color: 'rgb(255, 0, 0)',
-    opacity: 0.5
-    }
-  })
-});
-
-Small black cirlce for points
-
-image: new Circle({
-  fill: new Fill({color: 'rgba(0, 0, 0, 1)'}),
-  stroke: new Stroke({color: 'rgba(0, 0, 0, 1)'}),
-  radius: 5,
-}),
 */
