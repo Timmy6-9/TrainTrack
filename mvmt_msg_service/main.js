@@ -37,7 +37,6 @@ function ipv4(address) {
 };
 
 const { WebSocketServer } = require("ws");
-const { forEach } = require('lodash');
 const wss = new WebSocketServer({ port: 443 });
 console.log(`Socket Server Started & Listening`);
 
@@ -133,9 +132,13 @@ connectionManager.connect(function (error, client, reconnect) {
                                             "properties": {
                                             "name": result.Name,
                                             "id": item.body.train_id,
-                                            "offset": 0
+                                            "offset": 0,
+                                            "type": item.body.event_type
                                             },
                                         }
+                                        returnOperator(item.body.division_code, function(result){
+                                            fileObj.properties.operator = result.CompanyName;
+                                        });
                                         returnLocation(item.body.next_report_stanox, function(result){
                                             fileObj.properties.nextStop = result.Name;
                                         });
@@ -154,9 +157,13 @@ connectionManager.connect(function (error, client, reconnect) {
                                             "properties": {
                                             "name": result.Name,
                                             "id": item.body.train_id,
-                                            "offset": 0
+                                            "offset": 0,
+                                            "type": item.body.event_type
                                             },
                                         }
+                                        returnOperator(item.body.division_code, function(result){
+                                            fileObj.properties.operator = result.CompanyName;
+                                        });
                                         returnLocation(item.body.next_report_stanox, function(result){
                                             fileObj.properties.nextStop = result.Name;
                                         });
@@ -178,9 +185,13 @@ connectionManager.connect(function (error, client, reconnect) {
                                             "name": result.Name,
                                             "id": item.body.train_id,
                                             "offset": 0,
+                                            "type": item.body.event_type,
                                             "nextStop": "Terminated"
                                             },
                                         }
+                                        returnOperator(item.body.division_code, function(result){
+                                            fileObj.properties.operator = result.CompanyName;
+                                        });
                                         newPositions[count] = fileObj;
                                         count++;
                                     });
@@ -197,9 +208,13 @@ connectionManager.connect(function (error, client, reconnect) {
                                             "name": result.Name,
                                             "id": item.body.train_id,
                                             "offset": 0,
+                                            "type": item.body.event_type,
                                             "nextStop": "Terminated"
                                             },
                                         }
+                                        returnOperator(item.body.division_code, function(result){
+                                            fileObj.properties.operator = result.CompanyName;
+                                        });
                                         newPositions[count] = fileObj;
                                         count++;
                                     });
@@ -216,64 +231,61 @@ connectionManager.connect(function (error, client, reconnect) {
     });
 });
 
-
 // This function both checks and changes label offsets as well as pushing new/updated entries to the current positions array from the new positions array
+// TODO: Remove terminated items by ID after 3 or 4 subsequent heartbeats
 function replaceByID(item){
-    // Offset Store is a Map object with station name as the key, array of train IDs at that station as the value
-
-    // Moving entries down didn't work, maybe create a new array then rearrange positions
-
     // Filter positions to get old/previous location for this train id
-    const oldLocationFilter = currPositions.filter(function(obj){
+    filter = currPositions.filter(function(obj){
         return obj.properties.id === item.properties.id;
     });
-    const oldLocation = oldLocationFilter.map(item => item);
-    const oldItem = oldLocation[0];
-
-    if(oldItem != undefined){
-        // Get array of stations using old entry
-        if(offsetStore.has(oldItem.properties.name)){
-            var IDs = offsetStore.get(oldItem.properties.name);
-        }
-        console.log("IDs before: ", IDs);
-        // Remove old/last entry then add array back to Map
-        if(IDs.includes(oldItem.properties.id)){
-            const splicePos = IDs.indexOf(oldItem.properties.id);
-            IDs.splice(splicePos, 1, "");
-            // If the splice was before the last id, create a new array with just the ids then work out the offsets again
-            lastIDPos = IDs.findLastIndex((element) => element.length == 10);
-            if(splicePos < lastIDPos){
-                var IDs = _.remove(IDs, function(n) {
-                    return n != "";
-                });
-                // Work out offsets
-                IDs.forEach(element => {
-                    // Find item using id
-                    const filter = currPositions.filter(function(obj){
-                        return obj.properties.id === element;
-                    });
-                    const loc = filter.map(thing => thing);
-                    const currItem = loc[0];
-                    // Remove item with current offset
-                    currPositions = currPositions.filter(function(obj){
-                        return obj.properties.id !== currItem.properties.id;
-                    });
-                    // Work out new offset
-                    if(IDs.indexOf(currItem.properties.id) == 0){
-                        currItem.properties.offset = 25;
-                    }
-                    else if(IDs.indexOf(currItem.properties.id) > 0){
-                        currItem.properties.offset = (25 + (IDs.indexOf(currItem.properties.id) * 15))
-                    }
-                    // Push back to current positions with correct offset
-                    currPositions.push(currItem);
-                });
+    locationOrID = filter.map(item => item);
+    const oldItem = locationOrID[0];
+    // Offset Store is a Map object with station name as the key, array of train IDs at that station as the value
+    if(item.properties.id !== "undefined"){
+        if(oldItem != undefined){
+            // Get array of stations using old entry
+            if(offsetStore.has(oldItem.properties.name)){
+                var IDs = offsetStore.get(oldItem.properties.name);
             }
-
+            console.log("IDs before: ", IDs);
+            // Remove old/last entry then add array back to Map
+            if(IDs.includes(oldItem.properties.id)){
+                const splicePos = IDs.indexOf(oldItem.properties.id);
+                IDs.splice(splicePos, 1, "");
+                // If the splice was before the last id, create a new array with just the ids then work out the offsets again
+                lastIDPos = IDs.findLastIndex((element) => element.length == 10);
+                if(splicePos < lastIDPos){
+                    var IDs = _.remove(IDs, function(n) {
+                        return n != "";
+                    });
+                    // Work out offsets
+                    IDs.forEach(element => {
+                        // Find item using id
+                        const filter = currPositions.filter(function(obj){
+                            return obj.properties.id === element;
+                        });
+                        const locationOrID = filter.map(item => item);
+                        const currItem = locationOrID[0];
+                        // Remove item with current offset
+                        currPositions = currPositions.filter(function(obj){
+                            return obj.properties.id !== currItem.properties.id;
+                        });
+                        // Work out new offset
+                        if(IDs.indexOf(currItem.properties.id) == 0){
+                            currItem.properties.offset = 25;
+                        }
+                        else if(IDs.indexOf(currItem.properties.id) > 0){
+                            currItem.properties.offset = (25 + (IDs.indexOf(currItem.properties.id) * 15))
+                        }
+                        // Push back to current positions with correct offset
+                        currPositions.push(currItem);
+                    });
+                }
+            }
+            console.log("IDs after: ", IDs);
+            // Update offsetStore
+            offsetStore.set(oldItem.properties.name, IDs);
         }
-        console.log("IDs after: ", IDs);
-        // Update offsetStore
-        offsetStore.set(oldItem.properties.name, IDs);
     }
 
     // Get array for new station
@@ -327,11 +339,17 @@ function replaceOffsetSend(){
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Remember to configure new sql server with proper authentication for actual service
 
 function returnLocation(stanox, callback){
-    //console.log(stanox);
     var query = 'SELECT Name, Latitude, Longitude FROM stanox_tiploc_locations WHERE Stanox = ' + stanox;
+    connection.query(query, function(error, results, fields){
+        if(error) throw error;
+        return callback(results[0]);
+    });
+}
+
+function returnOperator(secCode, callback){
+    var query = 'SELECT CompanyName FROM toccodes WHERE SectorCode = ' + secCode;
     connection.query(query, function(error, results, fields){
         if(error) throw error;
         return callback(results[0]);
