@@ -2,7 +2,9 @@
   "dependencies": {
     "async": "^3.2.4",
     "lodash": "^4.17.21",
+    "mongodb": "^4.12.1",
     "mysql": "^2.18.1",
+    "mysql2": "^2.3.3",
     "stompit": "^1.0.0",
     "ws": "^8.11.0"
   }

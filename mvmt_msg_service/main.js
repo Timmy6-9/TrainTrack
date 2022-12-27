@@ -1,29 +1,38 @@
-// Security Token
-// 75083e36-7f77-4ade-99db-5ca132887e22
-// EK is the business code for overground London lines, the only movement feed I'm subscribed to at the moment
+// Security Token: 75083e36-7f77-4ade-99db-5ca132887e22
+// EK is the business code for London Overground services
+const _ = require('lodash');
+const mysql = require('mysql2');
+const {MongoClient} = require("mongodb");
+const stompit = require("stompit");
+const async = require("async");
 
-// Current JSON info needs to be saved to an array or object so it can be sent to any new clients connecting
-// Remember to configure new sql server with proper authentication for actual service
+const { WebSocketServer } = require("ws");
+const wss = new WebSocketServer({ port: 443 });
+console.log(`Socket Server Started & Listening`);
 
-// In the final version, this should send a binary string of JSON data which the client can then put into a file to be read by openlayers
 var count = 0;
+var userCounter = 0;
+
 var currPositions = [];
 var newPositions = [];
 
 const offsetStore = new Map();
+const addressUserMap = new Map();
+const locationMap = new Map();
 
-var _ = require('lodash');
-var mysql = require('mysql');
-var stompit = require("stompit");
-var async = require("async");
-
-var connection = mysql.createConnection({
+const connection = mysql.createConnection({
     host:'127.0.0.1',
     user:'root',
     password:'',
     database:'traindb',
     port:'3306'
 });
+
+const uri = "mongodb://127.0.0.1:27017/ScheduleDB";
+const client = new MongoClient(uri);
+const db = client.db('ScheduleStore');
+const coll = db.collection('DailyCollection151222');
+const locColl = db.collection('Location_Names');
 
 // Remove ipv6 header if address is ipv4
 function ipv4(address) {
@@ -36,20 +45,23 @@ function ipv4(address) {
     }
 };
 
-const { WebSocketServer } = require("ws");
-const wss = new WebSocketServer({ port: 443 });
-console.log(`Socket Server Started & Listening`);
-
-const addressUserMap = new Map();
-var userCounter = 0;
-
 wss.on('connection', function connection(ws, req) {
-    ws.on('message', function message() {
-        // Register user
+    ws.on('message', async function message(data) {
+        const msg = JSON.parse(data);
         let ip = ipv4(req.socket.remoteAddress);
-        addressUserMap.set(userCounter, ip);
-        console.log(addressUserMap);
-        userCounter++;
+        if(msg.type == 'register'){
+            addressUserMap.set(userCounter, ip);
+            console.log(addressUserMap);
+            userCounter++;
+        }
+        else if(msg.type == 'scheduleReq'){
+            const schedule = await findSchedule(msg.tiploc, msg.srvCode);
+            wss.clients.forEach(function each(client) {
+                if (client === ws) {
+                  client.send(JSON.stringify(schedule));
+                }
+            });
+        }
     });
 });
 
@@ -114,40 +126,43 @@ connectionManager.connect(function (error, client, reconnect) {
                     return;
                     }
                     async.each(data,
-                        function(item, next) {
+                        async function(item) {
                             // Look for Train Movement messages (0003)
-                        if (item.header && item.header.msg_type == "0003") {
-                            //console.log("rep stanox: " + '"' + item.body.reporting_stanox + '"', "loc stanox: " + '"' + item.body.loc_stanox + '"');
-                            // If train terminates there will be no destination stanox, check for train_terminated flag
-                            if(item.body.train_terminated == 'false'){
-                                // If reporting_stanox is 00000 (manual or off-route), use loc_stanox
-                                if(item.body.reporting_stanox !== "" && item.body.reporting_stanox !== "00000" && item.body.reporting_stanox.length === 5){
-                                    returnLocation(item.body.reporting_stanox, function(result){
-                                        const fileObj = {
-                                            "type": "Feature",
-                                            "geometry": {
-                                            "type": "Point",
-                                            "coordinates": [result.Longitude, result.Latitude]
-                                            },
-                                            "properties": {
-                                            "name": result.Name,
-                                            "id": item.body.train_id,
-                                            "offset": 0,
-                                            "type": item.body.event_type
-                                            },
-                                        }
-                                        returnOperator(item.body.division_code, function(result){
-                                            fileObj.properties.operator = result.CompanyName;
-                                        });
-                                        returnLocation(item.body.next_report_stanox, function(result){
-                                            fileObj.properties.nextStop = result.Name;
-                                        });
-                                        newPositions[count] = fileObj;
-                                        count++;
-                                    });
+                            if(item.header && item.header.msg_type == "0003") {
+                                // If train terminates there will be no destination stanox, check for train_terminated flag
+                                if(item.body.train_terminated == 'false' && item.body.nextStop != ''){
+                                    if(item.body.loc_stanox !== "" && item.body.loc_stanox !== "00000" && item.body.loc_stanox.length === 5){
+                                    const result = await returnLocation("Stanox", item.body.loc_stanox);
+                                    const fileObj = {
+                                        "type": "Feature",
+                                        "geometry": {
+                                        "type": "Point",
+                                        "coordinates": [result.Longitude, result.Latitude]
+                                        },
+                                        "properties": {
+                                        "name": result.Name,
+                                        "current_id": item.body.current_train_id,
+                                        "original_id": item.body.train_id,
+                                        "tiploc": result.Tiploc,
+                                        "service_code": item.body.train_service_code,
+                                        "offset": 0,
+                                        "event_type": item.body.event_type
+                                        },
+                                    }
+
+                                    const retOp = await returnOperator(item.body.division_code);
+                                    fileObj.properties.operator = retOp.CompanyName;
+
+                                    const nextLoc = await returnLocation("Stanox", item.body.next_report_stanox);
+                                    fileObj.properties.nextStop = nextLoc.Name;
+
+                                    newPositions[count] = fileObj;
+                                    count++;
+                                    }
                                 }
-                                else if(item.body.loc_stanox !== "" && item.body.loc_stanox !== "00000" && item.body.loc_stanox.length === 5){
-                                    returnLocation(item.body.loc_stanox, function(result){
+                                else{
+                                    if(item.body.loc_stanox !== "" && item.body.loc_stanox !== "00000" && item.body.loc_stanox.length === 5){
+                                        const result = await returnLocation("Stanox", item.body.loc_stanox);
                                         const fileObj = {
                                             "type": "Feature",
                                             "geometry": {
@@ -156,72 +171,48 @@ connectionManager.connect(function (error, client, reconnect) {
                                             },
                                             "properties": {
                                             "name": result.Name,
-                                            "id": item.body.train_id,
+                                            "current_id": item.body.current_train_id,
+                                            "original_id": item.body.train_id,
+                                            "tiploc": result.Tiploc,
+                                            "service_code": item.body.train_service_code,
                                             "offset": 0,
-                                            "type": item.body.event_type
-                                            },
-                                        }
-                                        returnOperator(item.body.division_code, function(result){
-                                            fileObj.properties.operator = result.CompanyName;
-                                        });
-                                        returnLocation(item.body.next_report_stanox, function(result){
-                                            fileObj.properties.nextStop = result.Name;
-                                        });
-                                        newPositions[count] = fileObj;
-                                        count++;
-                                    });
-                                }
-                            }
-                            else{
-                                if(item.body.reporting_stanox !== "" && item.body.reporting_stanox !== "00000" && item.body.reporting_stanox.length === 5){
-                                    returnLocation(item.body.reporting_stanox, function(result){
-                                        const fileObj = {
-                                            "type": "Feature",
-                                            "geometry": {
-                                            "type": "Point",
-                                            "coordinates": [result.Longitude, result.Latitude]
-                                            },
-                                            "properties": {
-                                            "name": result.Name,
-                                            "id": item.body.train_id,
-                                            "offset": 0,
-                                            "type": item.body.event_type,
+                                            "event_type": item.body.event_type,
                                             "nextStop": "Terminated"
                                             },
                                         }
-                                        returnOperator(item.body.division_code, function(result){
-                                            fileObj.properties.operator = result.CompanyName;
-                                        });
+
+                                        const retOp = await returnOperator(item.body.division_code);
+                                        fileObj.properties.operator = retOp.CompanyName;
+
                                         newPositions[count] = fileObj;
                                         count++;
-                                    });
-                                }
-                                else if(item.body.loc_stanox !== "" && item.body.loc_stanox !== "00000" && item.body.loc_stanox.length === 5){
-                                    returnLocation(item.body.loc_stanox, function(result){
-                                        const fileObj = {
-                                            "type": "Feature",
-                                            "geometry": {
-                                            "type": "Point",
-                                            "coordinates": [result.Longitude, result.Latitude]
-                                            },
-                                            "properties": {
-                                            "name": result.Name,
-                                            "id": item.body.train_id,
-                                            "offset": 0,
-                                            "type": item.body.event_type,
-                                            "nextStop": "Terminated"
-                                            },
-                                        }
-                                        returnOperator(item.body.division_code, function(result){
-                                            fileObj.properties.operator = result.CompanyName;
-                                        });
-                                        newPositions[count] = fileObj;
-                                        count++;
-                                    });
+                                    }
                                 }
                             }
-                        }
-                    next();
+                            // Train Cancellation Messages
+                            else if(item.header && item.header.msg_type == "0002"){
+                                // Be sure to add more details to this message, for notifications later on.
+                                const fileObj = {
+                                    "type": "Feature",
+                                    "geometry": {
+                                    "type": "Point",
+                                    "coordinates": [0, 0]
+                                    },
+                                    "properties": {
+                                    "name": "Cancelled",
+                                    "current_id": item.body.train_id,
+                                    "original_id": item.body.train_id,
+                                    "tiploc": "Cancelled",
+                                    "service_code": "Cancelled",
+                                    "offset": "Cancelled",
+                                    "event_type": "Cancelled",
+                                    "nextStop": "Cancelled"
+                                    },
+                                }
+                                newPositions[count] = fileObj;
+                                count++;
+                            }
+                    //next();
                     }
                 );
             }
@@ -231,26 +222,26 @@ connectionManager.connect(function (error, client, reconnect) {
     });
 });
 
-// This function both checks and changes label offsets as well as pushing new/updated entries to the current positions array from the new positions array
-// TODO: Remove terminated items by ID after 3 or 4 subsequent heartbeats
+// NEED TO CHANGE THIS TO USE CORRECT ID
+// Individual trains are represented by a 10 digit UID, service codes are 8 digit numbers corresponding to routes from one terminating station to another
+// This function both checks and changes label offsets as well as pushing new/updated entries to the current positions array from the new positions array, also removes trains that have terminated
 function replaceByID(item){
     // Filter positions to get old/previous location for this train id
     filter = currPositions.filter(function(obj){
-        return obj.properties.id === item.properties.id;
+        return obj.properties.original_id === item.properties.original_id;
     });
     locationOrID = filter.map(item => item);
     const oldItem = locationOrID[0];
     // Offset Store is a Map object with station name as the key, array of train IDs at that station as the value
-    if(item.properties.id !== "undefined"){
+    if(item.properties.original_id != undefined){
         if(oldItem != undefined){
             // Get array of stations using old entry
             if(offsetStore.has(oldItem.properties.name)){
                 var IDs = offsetStore.get(oldItem.properties.name);
             }
-            console.log("IDs before: ", IDs);
             // Remove old/last entry then add array back to Map
-            if(IDs.includes(oldItem.properties.id)){
-                const splicePos = IDs.indexOf(oldItem.properties.id);
+            if(IDs.includes(oldItem.properties.original_id)){
+                const splicePos = IDs.indexOf(oldItem.properties.original_id);
                 IDs.splice(splicePos, 1, "");
                 // If the splice was before the last id, create a new array with just the ids then work out the offsets again
                 lastIDPos = IDs.findLastIndex((element) => element.length == 10);
@@ -262,68 +253,72 @@ function replaceByID(item){
                     IDs.forEach(element => {
                         // Find item using id
                         const filter = currPositions.filter(function(obj){
-                            return obj.properties.id === element;
+                            return obj.properties.original_id === element;
                         });
                         const locationOrID = filter.map(item => item);
                         const currItem = locationOrID[0];
                         // Remove item with current offset
                         currPositions = currPositions.filter(function(obj){
-                            return obj.properties.id !== currItem.properties.id;
+                            return obj.properties.original_id !== currItem.properties.original_id;
                         });
                         // Work out new offset
-                        if(IDs.indexOf(currItem.properties.id) == 0){
+                        if(IDs.indexOf(currItem.properties.original_id) == 0){
                             currItem.properties.offset = 25;
                         }
-                        else if(IDs.indexOf(currItem.properties.id) > 0){
-                            currItem.properties.offset = (25 + (IDs.indexOf(currItem.properties.id) * 15))
+                        else if(IDs.indexOf(currItem.properties.original_id) > 0){
+                            currItem.properties.offset = (25 + (IDs.indexOf(currItem.properties.original_id) * 15));
                         }
                         // Push back to current positions with correct offset
                         currPositions.push(currItem);
                     });
                 }
             }
-            console.log("IDs after: ", IDs);
             // Update offsetStore
             offsetStore.set(oldItem.properties.name, IDs);
         }
     }
 
-    // Get array for new station
-    if(offsetStore.has(item.properties.name)){
-        var newLocIDs = offsetStore.get(item.properties.name);
+    if(item.properties.nextStop === "Terminated" || item.properties.nextStop === "Cancelled"){
+        // If train is terminated, remove it from the array, same if train is cancelled
+        console.log(item.properties.original_id + " " + item.properties.nextStop + " ( " + item.properties.service_code + " ) ");
+        currPositions = currPositions.filter(function(obj){
+           return obj.properties.original_id !== item.properties.original_id;
+       });
     }
-
-    if(Array.isArray(newLocIDs)){
-        // Use indexOf to replace first available position for new location
-        // If no index is available, push new entry to array
-        if(newLocIDs.indexOf("") != -1){
-            newLocIDs.splice(newLocIDs.indexOf(""), 1, item.properties.id);
+    else{
+        // Get array for new station
+        if(offsetStore.has(item.properties.name)){
+            var newLocIDs = offsetStore.get(item.properties.name);
         }
-        else{
-            newLocIDs.push(item.properties.id);
+        if(Array.isArray(newLocIDs)){
+            // Use indexOf to replace first available position for new location
+            // If no index is available, push new entry to array
+            if(newLocIDs.indexOf("") != -1){
+                newLocIDs.splice(newLocIDs.indexOf(""), 1, item.properties.original_id);
+            }
+            else{
+                newLocIDs.push(item.properties.original_id);
+            }
+            // Use the indexOf result to set the offset 0 = 25, 1 = 40, 2 = 55, etc.
+            if(newLocIDs.indexOf(item.properties.original_id) == 0){
+                item.properties.offset = 25;
+            }
+            else if(newLocIDs.indexOf(item.properties.original_id) > 0){
+                item.properties.offset = (25 + (newLocIDs.indexOf(item.properties.original_id) * 15));
+            }
         }
-        // Use the indexOf result to set the offset 0 = 25, 1 = 40, 2 = 55, etc.
-        if(newLocIDs.indexOf(item.properties.id) == 0){
+        // Create Map entry for station if none exists, add this id as the first entry and set offset to 25
+        if(!offsetStore.has(item.properties.name)){
+            const newID = [item.properties.original_id];
+            offsetStore.set(item.properties.name, newID);
             item.properties.offset = 25;
         }
-        else if(newLocIDs.indexOf(item.properties.id) > 0){
-            item.properties.offset = (25 + (newLocIDs.indexOf(item.properties.id) * 15))
-        }
+        // Add new entry to current train positions
+        currPositions = currPositions.filter(function(obj){
+            return obj.properties.original_id !== item.properties.original_id;
+        });
+        currPositions.push(item);
     }
-
-    // Create Map entry for station if none exists, add this id as the first entry and set offset to 25
-    if(!offsetStore.has(item.properties.name)){
-        const newID = [item.properties.id];
-        offsetStore.set(item.properties.name, newID)
-        item.properties.offset = 25;
-    }
-
-    // Add new entry to current train positions
-    currPositions = currPositions.filter(function(obj){
-        return obj.properties.id !== item.properties.id;
-    });
-
-    currPositions.push(item);
 }
 
 function replaceOffsetSend(){
@@ -339,19 +334,118 @@ function replaceOffsetSend(){
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// MySQL
 
-function returnLocation(stanox, callback){
-    var query = 'SELECT Name, Latitude, Longitude FROM stanox_tiploc_locations WHERE Stanox = ' + stanox;
-    connection.query(query, function(error, results, fields){
-        if(error) throw error;
-        return callback(results[0]);
-    });
+async function returnLocation(type, code){
+    const result = await connection.promise().query('SELECT Name, Latitude, Longitude, Tiploc FROM stanox_tiploc_locations WHERE ' + type + ' = ' + "'" + code + "'" );
+    if(result[0][0] != undefined){
+        return result[0][0];
+    }
 }
 
-function returnOperator(secCode, callback){
-    var query = 'SELECT CompanyName FROM toccodes WHERE SectorCode = ' + secCode;
-    connection.query(query, function(error, results, fields){
-        if(error) throw error;
-        return callback(results[0]);
-    });
+async function returnOperator(secCode){
+    const result = await connection.promise().query('SELECT CompanyName FROM toccodes WHERE SectorCode = ' + secCode);
+    return result[0][0];
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// MongoDB
+// Need to convert day of the week, date and time when making requests
+// Remember that Sunday - Saturday is 0 - 6 in JS and days on the schedule go from Monday 1000000 to Sunday 0000001
+// Need to check that the current day is after schedule start date but before schedule end date
+// Need the time to find specific train times
+// Start and end dates are YYYY-MM-DD
+// Time formate is HHMMh, with h being a capital H for half minute
+    function currentDate(){
+        const today = new Date(Date.now());
+        const yr = today.getFullYear();
+        const mth = today.getMonth() + 1;
+        if(mth.length < 2){mth = "0" + mth}
+        const dom = today.getDate();
+        if(dom.length < 2){dom = "0" + dom}
+        const date = yr + "-" + mth + "-" + dom;
+        var time = "";
+        var hrs = today.getHours();
+        if(String(hrs).length < 2){hrs = "0" + hrs}
+        var mins = today.getMinutes();
+        if(String(mins).length < 2){mins = "0" + mins}
+        if(today.getSeconds() > 30){time = String(hrs) + String(mins) + "H"}else{time = String(hrs) + String(mins)}
+        const whatDay = today.getDay();
+        var day;
+        switch(whatDay){
+            case 0:
+                day = /......1/;
+                break;
+            case 1:
+                day = /1....../;
+                break;
+            case 2:
+                day = /.1...../;
+                break;
+            case 3:
+                day = /..1..../;
+                break;
+            case 4:
+                day = /...1.../;
+                break;
+            case 5:
+                day = /....1../;
+                break;
+            case 6:
+                day = /.....1./;
+                break;
+        }
+        return [day, date, time];
+    }
+
+
+// Find better ways to filter this data and apply it to routes/services
+    async function findSchedule(tiploc, srvCode){
+        const dateTime = currentDate();
+        const dayOfWeek = dateTime[0];
+        const date = dateTime[1];
+        const time = dateTime[2];
+        // Use $gte and $lte to query the start and end of schedule dates against the current day
+        const scheduleData = coll.find({"JsonScheduleV1.transaction_type": "Create", "JsonScheduleV1.train_status": {$not: {$eq:"F"}}, "JsonScheduleV1.schedule_days_runs": dayOfWeek, "JsonScheduleV1.schedule_segment.schedule_location": {"$elemMatch": {"tiploc_code": tiploc, "public_departure": {$gte: time}}}, "JsonScheduleV1.schedule_segment.CIF_train_service_code": srvCode, "JsonScheduleV1.schedule_start_date": {$lte: date}, "JsonScheduleV1.schedule_end_date": {$gte: date}});
+        const scheduleArray = await scheduleData.toArray();
+        var timetables = getFormattedTimetable(scheduleArray);
+        return timetables;
+    }
+
+    async function getLocationName(){
+        console.log("mapping location names...");
+        var locationData = locColl.find({"TIPLOC": {$exists: true}, "Location": {$exists: true}}).project({TIPLOC: 1, Location: 1, _id: 0});
+        var locationArray = await locationData.toArray();
+        locationArray.forEach(function(item){
+            locationMap.set(item.TIPLOC, item.Location);
+        });
+        console.log("mapping location names FINISHED");
+    }
+
+    function getFormattedTimetable(arr){
+        var timetables = [];
+        for(i = 0; i < arr.length; i++){
+            var timetable = [];
+            const locs = arr[i].JsonScheduleV1.schedule_segment.schedule_location;
+            for(x = 0; x < locs.length; x++){
+                var timeObj = locationMap.get(locs[x].tiploc_code);
+                if(typeof locs[x].public_departure !== "undefined" && locs[x].public_departure !== null){timeObj = timeObj + " Departure: " + locs[x].public_departure}
+                if(typeof locs[x].public_arrival !== "undefined" && locs[x].public_arrival !== null){timeObj = timeObj + " Arrival: " + locs[x].public_arrival}
+                timetable.push(timeObj);
+            }
+            timetables.push(timetable);
+        }
+        return timetables;
+    }
+
+    getLocationName();
+
+// Need popup sidebar on frontend that appears on left side of screen to show formatted schedule data
+
+// Use origin station + destination station to get times and route
+
+// Use time in milliseconds to get next scheduled stop for a train
+
+// Train Status is not "F" (Freight)
+
+// Create and populate map of tiploc codes and actual names on startup?

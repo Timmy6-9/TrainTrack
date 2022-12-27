@@ -27,7 +27,7 @@ function pointStyleFunction(feature) {
       scale: 0.75
     }),
     text: new Text({
-      text: feature.values_.id,
+      text: feature.values_.original_id,
       offsetY: feature.values_.offset,
       fill: new Fill({color: 'rgba(0, 0, 0, 1)'}),
       scale: 1.5
@@ -56,26 +56,42 @@ const map = new Map({
 })
 
 ws.onopen = function() {
-  ws.send("Register");
+  const registerMsg = {type: 'register'};
+  ws.send(JSON.stringify(registerMsg));
   console.log('Websocket Connection Registered');
 }
 
 ws.onmessage = function(event) {
-  locations = event.data;
-  if(locations !== ""){
-    const jsonFile = '{"type": "FeatureCollection", "features": ' + locations + '}';
-    console.log(jsonFile);
-    const file = new File([jsonFile], {type: "application/json",});
-    URL.revokeObjectURL(source.getUrl());
-    source.setUrl(URL.createObjectURL(file));
-    source.refresh();
-    map.render();
+  if(event.data !== ""){
+    if(event.data.includes("geometry")){
+      const jsonFile = '{"type": "FeatureCollection", "features": ' + event.data + '}';
+      console.log(jsonFile);
+      const file = new File([jsonFile], {type: "application/json",});
+      URL.revokeObjectURL(source.getUrl());
+      source.setUrl(URL.createObjectURL(file));
+      source.refresh();
+      map.render();
+    }
+    else if(event.data.includes("Departure")){
+      console.log(event.data);
+    }
   }
 }
 
+// Add actual reconnect logic
 ws.onclose = function() {
   console.log("Server Connection Lost. Attempting to reconnect");
 }
+
+function exampleRequest(tiploc, srvCode){
+  const request = {
+    type: "scheduleReq",
+    tiploc: tiploc,
+    srvCode: srvCode
+  }
+  ws.send(JSON.stringify(request));
+}
+//setTimeout(exampleRequest, 3000);
 
 // Popup labels
 const element = document.getElementById('popup');
@@ -105,10 +121,11 @@ map.on('click', function (evt) {
     return;
   }
   popup.setPosition(evt.coordinate);
+  exampleRequest(feature.get('tiploc'), feature.get('service_code'));
   popover = new bootstrap.Popover(element, {
     placement: 'right',
     html: true,
-    content: "<p> Details <br>Location: " + "<code>" + feature.get('name') + "</code><br>Next Stop: " + "<code>" + feature.get('nextStop') + "</code><br>Type: " + "<code>" + feature.get('type') + "</code><br>Operator: " + "<code>" + feature.get('operator') + "</code></p>"
+    content: "<p> Details <br>Location: " + "<code>" + feature.get('name') + "</code><br>Next Stop: " + "<code>" + feature.get('nextStop') + "</code><br>Type: " + "<code>" + feature.get('event_type') + "</code><br>Operator: " + "<code>" + feature.get('operator') + "</code></p>"
   });
   popover.show();
 });
@@ -121,3 +138,9 @@ map.on('pointermove', function (e) {
 });
 // Close the popup when the map is moved
 map.on('movestart', disposePopover);
+
+const scheduleButton = document.getElementById('schedule-button');
+
+scheduleButton.onclick = function () {
+
+};
