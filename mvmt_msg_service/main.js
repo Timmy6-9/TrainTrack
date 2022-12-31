@@ -7,14 +7,24 @@ const stompit = require("stompit");
 const async = require("async");
 
 const { WebSocketServer } = require("ws");
-const wss = new WebSocketServer({ port: 443 });
+const wss = new WebSocketServer({ port: 8080 });
 console.log(`Socket Server Started & Listening`);
 
+// New positions array counter
 var count = 0;
+
+// User address map counter
 var userCounter = 0;
+
+// Heartbeat Counter
+var heartCount = 0;
+
+// Cancel Array Counter
+var cancelCount = 0;
 
 var currPositions = [];
 var newPositions = [];
+var cancelArray = [];
 
 const offsetStore = new Map();
 const addressUserMap = new Map();
@@ -31,8 +41,8 @@ const connection = mysql.createConnection({
 const uri = "mongodb://127.0.0.1:27017/ScheduleDB";
 const client = new MongoClient(uri);
 const db = client.db('ScheduleStore');
-const coll = db.collection('DailyCollection151222');
-const locColl = db.collection('Location_Names');
+const coll = db.collection('DailyCollection301222');
+const locColl = db.collection('Tiploc_Stanox_Locations');
 
 // Remove ipv6 header if address is ipv4
 function ipv4(address) {
@@ -55,8 +65,8 @@ wss.on('connection', function connection(ws, req) {
             userCounter++;
         }
         else if(msg.type == 'scheduleReq'){
-            const schedule = await findSchedule(msg.tiploc, msg.srvCode);
-            wss.clients.forEach(function each(client) {
+            const schedule = await findSchedule(msg.tiploc);
+            await wss.clients.forEach(function each(client) {
                 if (client === ws) {
                   client.send(JSON.stringify(schedule));
                 }
@@ -127,37 +137,41 @@ connectionManager.connect(function (error, client, reconnect) {
                     }
                     async.each(data,
                         async function(item) {
+                            // ADD TIMES FROM ALL MESSAGES TO ALL OBJECTS
                             // Look for Train Movement messages (0003)
                             if(item.header && item.header.msg_type == "0003") {
                                 // If train terminates there will be no destination stanox, check for train_terminated flag
                                 if(item.body.train_terminated == 'false' && item.body.nextStop != ''){
                                     if(item.body.loc_stanox !== "" && item.body.loc_stanox !== "00000" && item.body.loc_stanox.length === 5){
-                                    const result = await returnLocation("Stanox", item.body.loc_stanox);
-                                    const fileObj = {
-                                        "type": "Feature",
-                                        "geometry": {
-                                        "type": "Point",
-                                        "coordinates": [result.Longitude, result.Latitude]
-                                        },
-                                        "properties": {
-                                        "name": result.Name,
-                                        "current_id": item.body.current_train_id,
-                                        "original_id": item.body.train_id,
-                                        "tiploc": result.Tiploc,
-                                        "service_code": item.body.train_service_code,
-                                        "offset": 0,
-                                        "event_type": item.body.event_type
-                                        },
-                                    }
+                                        const result = await returnLocation("Stanox", item.body.loc_stanox);
+                                        const fileObj = {
+                                            "type": "Feature",
+                                            "geometry": {
+                                            "type": "Point",
+                                            "coordinates": [result.Longitude, result.Latitude]
+                                            },
+                                            "properties": {
+                                            "name": result.Name,
+                                            "current_id": item.body.current_train_id,
+                                            "original_id": item.body.train_id,
+                                            "tiploc": result.Tiploc,
+                                            "service_code": item.body.train_service_code,
+                                            "offset": 0,
+                                            "event_type": item.body.event_type,
+                                            "message_count": heartCount
+                                            },
+                                        }
 
-                                    const retOp = await returnOperator(item.body.division_code);
-                                    fileObj.properties.operator = retOp.CompanyName;
+                                        const retOp = await returnOperator(item.body.division_code);
+                                        fileObj.properties.operator = retOp.CompanyName;
 
-                                    const nextLoc = await returnLocation("Stanox", item.body.next_report_stanox);
-                                    fileObj.properties.nextStop = nextLoc.Name;
-
-                                    newPositions[count] = fileObj;
-                                    count++;
+                                        // Drop message if next location can't be found
+                                        const nextLoc = await returnLocation("Stanox", item.body.next_report_stanox);
+                                        if(typeof nextLoc !== "undefined" && typeof nextLoc.Name !== "undefined"){
+                                            fileObj.properties.nextStop = nextLoc.Name;
+                                            newPositions[count] = fileObj;
+                                            count++;
+                                        }
                                     }
                                 }
                                 else{
@@ -177,7 +191,8 @@ connectionManager.connect(function (error, client, reconnect) {
                                             "service_code": item.body.train_service_code,
                                             "offset": 0,
                                             "event_type": item.body.event_type,
-                                            "nextStop": "Terminated"
+                                            "nextStop": "Terminated",
+                                            "message_count": heartCount
                                             },
                                         }
 
@@ -191,7 +206,7 @@ connectionManager.connect(function (error, client, reconnect) {
                             }
                             // Train Cancellation Messages
                             else if(item.header && item.header.msg_type == "0002"){
-                                // Be sure to add more details to this message, for notifications later on.
+                                // Be sure to add more details to this message, for notifications later on. | Train cancellation messages have nearly all data required for this.
                                 const fileObj = {
                                     "type": "Feature",
                                     "geometry": {
@@ -203,7 +218,7 @@ connectionManager.connect(function (error, client, reconnect) {
                                     "current_id": item.body.train_id,
                                     "original_id": item.body.train_id,
                                     "tiploc": "Cancelled",
-                                    "service_code": "Cancelled",
+                                    "service_code": item.body.train_service_code,
                                     "offset": "Cancelled",
                                     "event_type": "Cancelled",
                                     "nextStop": "Cancelled"
@@ -217,7 +232,8 @@ connectionManager.connect(function (error, client, reconnect) {
                 );
             }
             // Call function to send locations to users every heartbeat
-            replaceOffsetSend()
+            replaceOffsetSend();
+            sendCancellations();
         });
     });
 });
@@ -279,6 +295,11 @@ function replaceByID(item){
     }
 
     if(item.properties.nextStop === "Terminated" || item.properties.nextStop === "Cancelled"){
+        // If train is cancelled, add the object to the cancelled trains array
+        if(item.properties.nextStop === "Cancelled"){
+            cancelArray[cancelCount] = item;
+            cancelCount++;
+        };
         // If train is terminated, remove it from the array, same if train is cancelled
         console.log(item.properties.original_id + " " + item.properties.nextStop + " ( " + item.properties.service_code + " ) ");
         currPositions = currPositions.filter(function(obj){
@@ -321,15 +342,37 @@ function replaceByID(item){
     }
 }
 
+function deleteAfter5(item){
+    // If the train/ID hasn't been heard from for 5+ minutes, drop from array | Prevents clutter and trains sticking around because no termination/cancellation message is sent out.
+    if((item.properties.heartCount + 20) < heartCount){
+        currPositions = currPositions.filter(function(obj){
+            return obj.properties.original_id !== item.properties.original_id;
+        });
+        console.log("Lingering ID Removed");
+    }
+}
+
 function replaceOffsetSend(){
     if(newPositions != []){
         newPositions.forEach(replaceByID);
         count = 0;
         if(currPositions != []){
+            currPositions.forEach(deleteAfter5);
             wss.clients.forEach(function each(client){
                 client.send(JSON.stringify(currPositions));
             });
         }
+    }
+}
+
+function sendCancellations(){
+    if(cancelArray != []){
+        wss.clients.forEach(function each(client){
+            client.send(JSON.stringify(cancelArray));
+        });
+        console.log("Cancellations Sent")
+        cancelArray = [];
+        cancelCount = 0;
     }
 }
 
@@ -400,44 +443,47 @@ async function returnOperator(secCode){
 
 
 // Find better ways to filter this data and apply it to routes/services
-    async function findSchedule(tiploc, srvCode){
+    async function findSchedule(tiploc){
         const dateTime = currentDate();
         const dayOfWeek = dateTime[0];
         const date = dateTime[1];
         const time = dateTime[2];
         // Use $gte and $lte to query the start and end of schedule dates against the current day
-        const scheduleData = coll.find({"JsonScheduleV1.transaction_type": "Create", "JsonScheduleV1.train_status": {$not: {$eq:"F"}}, "JsonScheduleV1.schedule_days_runs": dayOfWeek, "JsonScheduleV1.schedule_segment.schedule_location": {"$elemMatch": {"tiploc_code": tiploc, "public_departure": {$gte: time}}}, "JsonScheduleV1.schedule_segment.CIF_train_service_code": srvCode, "JsonScheduleV1.schedule_start_date": {$lte: date}, "JsonScheduleV1.schedule_end_date": {$gte: date}});
+        const scheduleData = coll.find({"JsonScheduleV1.transaction_type": "Create", "JsonScheduleV1.train_status": {$not: {$eq:"F"}}, "JsonScheduleV1.schedule_days_runs": dayOfWeek, "JsonScheduleV1.schedule_segment.schedule_location": {"$elemMatch": {"tiploc_code": tiploc, "public_departure": {$gte: time}}}, "JsonScheduleV1.schedule_start_date": {$lte: date}, "JsonScheduleV1.schedule_end_date": {$gte: date}});
         const scheduleArray = await scheduleData.toArray();
         var timetables = getFormattedTimetable(scheduleArray);
+        console.log(tiploc);
         return timetables;
     }
 
     async function getLocationName(){
         console.log("mapping location names...");
-        var locationData = locColl.find({"TIPLOC": {$exists: true}, "Location": {$exists: true}}).project({TIPLOC: 1, Location: 1, _id: 0});
+        var locationData = locColl.find({"Tiploc": {$exists: true}, "Name": {$exists: true}}).project({Tiploc: 1, Name: 1, _id: 0});
         var locationArray = await locationData.toArray();
         locationArray.forEach(function(item){
-            locationMap.set(item.TIPLOC, item.Location);
+            locationMap.set(item.Tiploc, item.Name);
         });
         console.log("mapping location names FINISHED");
     }
 
+    // These need to be objects for formatting on the client side
     function getFormattedTimetable(arr){
         var timetables = [];
         for(i = 0; i < arr.length; i++){
             var timetable = [];
             const locs = arr[i].JsonScheduleV1.schedule_segment.schedule_location;
             for(x = 0; x < locs.length; x++){
-                var timeObj = locationMap.get(locs[x].tiploc_code);
-                if(typeof locs[x].public_departure !== "undefined" && locs[x].public_departure !== null){timeObj = timeObj + " Departure: " + locs[x].public_departure}
-                if(typeof locs[x].public_arrival !== "undefined" && locs[x].public_arrival !== null){timeObj = timeObj + " Arrival: " + locs[x].public_arrival}
-                timetable.push(timeObj);
+                var timeObj = {"name": locationMap.get(locs[x].tiploc_code)}
+                if(typeof locs[x].public_arrival !== "undefined" && locs[x].public_arrival !== null){timeObj.arrival = locs[x].public_arrival}
+                if(typeof locs[x].public_departure !== "undefined" && locs[x].public_departure !== null){timeObj.departure = locs[x].public_departure}
+                if(typeof Object.values(timeObj)[1] !== "undefined" && typeof Object.values(timeObj)[2] !== "undefined"){
+                    if(timeObj.departure.length >= 4 || timeObj.arrival.length >= 4){timetable.push(timeObj)}
+                }
             }
             timetables.push(timetable);
         }
         return timetables;
     }
-
     getLocationName();
 
 // Need popup sidebar on frontend that appears on left side of screen to show formatted schedule data

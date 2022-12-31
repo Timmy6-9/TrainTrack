@@ -1,20 +1,19 @@
 Current Features:
-- Tracks Arrival and Departure messages for all trains run by London Overground on a map
-- Any cancelled or terminated trains are no longer tracked
-- Clicking on a train shows some basic details and sends a request to the server, the server returns all scheduled trains going through that station for the rest of the day, which the client then logs in the console
 
-TO-DO:
+Client Side/Frontend:
+- Shows locations of train messages and basic details when icons are clicked
+- Clicking the schedule button for a location will bring up a list of destinations, when one is clicked it will show a list of train times from the origin location to the the selected destination (Currently in console)
 
-Front end:
-- Schedule button in popup that sends the request for formatted schedule data
-- Cancellation ticker with cancelled train details
-- Add filter for different train operators once more data feeds are added
-- Expand Filtering from this point
+Server Side/Backend:
+- Collates relevant data from train movement messages into an array and sends the array to client via websocket connection every heartbeat (currently 15 seconds)
+- Handles cancellations and terminations, sends cancellations to client (Cancellations will be displayed on a ticker at the bottom of the screen)
+- Collects schedule information for a chosen location on request from clients using current time/date combined with a tiploc code and sends all available data for ordering/formatting
+- Uses MySQL and MongoDB to return information about locations and schedules (Current plan is to move to just MongoDB as it's much faster and a relational database isn't needed)
 
-Back end:
-- Add rollup/vite script to movement service package.json once finished with majority of backend
-- Clean up movement service as much as possible
-- Subscribe to more data feeds from network rail once service is streamlined and can handle more points
-
-Both:
-- Stress Test
+Planned features:
+- Actual arrival time estimates using message data
+- Ability to get a schedule from any location to another (within the realms of possibility), with stops and changes shown
+- Highlighting of both origin and destination stations on the map with little start and finish tags, with change/stop tags for train changes
+- Filtering displayed stations by train operator
+- Use of geolocation API to suggest a station to use
+- All UK passenger services to be displayed rather than just the London Overground feed
