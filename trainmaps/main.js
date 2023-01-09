@@ -25,8 +25,8 @@ var source = new VectorSource({
 function pointStyleFunction(feature) {
   return new Style({
     image: new Icon({
-      src: './train.png',
-      scale: 0.75
+      src: './station.png',
+      scale: 0.075
     }),
     text: new Text({
       text: feature.values_.original_id,
@@ -63,11 +63,11 @@ ws.onopen = function() {
   console.log('Websocket Connection Registered');
 }
 
+// Change the if statements to read object properties on first array index instead of using includes
 ws.onmessage = function(event) {
   if(event.data !== "" && event.data.length > 0){
     if(event.data.includes("geometry") && !event.data.includes("Cancelled")){
       const jsonFile = '{"type": "FeatureCollection", "features": ' + event.data + '}';
-      //console.log(jsonFile);
       const file = new File([jsonFile], {type: "application/json",});
       URL.revokeObjectURL(source.getUrl());
       source.setUrl(URL.createObjectURL(file));
@@ -92,11 +92,10 @@ ws.onclose = function() {
 }
 
 // Sends request to server for a list of schedules both departing and arriving at this station, returns from server as an array to be formatted by client
-function scheduleRequest(tiploc, srvCode){
+function scheduleRequest(tiploc){
   const request = {
     type: "scheduleReq",
-    tiploc: tiploc,
-    srvCode: srvCode
+    tiploc: tiploc
   }
   ws.send(JSON.stringify(request));
 }
@@ -138,7 +137,7 @@ map.on('click', function (evt) {
   popover = new bootstrap.Popover(element, {
     placement: 'right',
     html: true,
-    content: "<p> Details <br>Location: " + "<code>" + feature.get('name') + "</code><br>Next Stop: " + "<code>" + feature.get('nextStop') + "</code><br>Type: " + "<code>" + feature.get('event_type') + "</code><br>Operator: " + "<code>" + feature.get('operator') + "</code></p>" + "<p class='hidden'>" + "[" + feature.get('tiploc') + "," + feature.get('service_code') + "]" + "</p>" + "<a href='#' id='scheduleButton'> Schedule </a>"
+    content: "<p> Details <br>Location: " + "<code>" + feature.get('name') + "</code></p>" + "<p class='hidden'>" + "[" + feature.get('tiploc') + "]" + "</p>" + "<a href='#' id='scheduleButton'> Schedule </a>"
   });
 
   originLocation = feature.get('name');
@@ -179,9 +178,9 @@ function createScheduleButton(){
 async function openScheduleInfo(){
   if(schOpen === false){
     schOpen = true;
-    const tiploc = this.offsetParent.innerHTML.substring(this.offsetParent.innerHTML.indexOf("[") + 1, this.offsetParent.innerHTML.lastIndexOf(","));
-    const srvCode = this.offsetParent.innerHTML.substring(this.offsetParent.innerHTML.lastIndexOf(",") + 1, this.offsetParent.innerHTML.lastIndexOf("]"));
-    scheduleRequest(tiploc, srvCode);
+    console.log(this.offsetParent.innerHTML)
+    const tiploc = this.offsetParent.innerHTML.substring(this.offsetParent.innerHTML.indexOf("[") + 1, this.offsetParent.innerHTML.lastIndexOf("]"));
+    scheduleRequest(tiploc);
     document.getElementById("scheduleInfo").style.width = "25%";
     const loadingImg = document.createElement("img");
     loadingImg.src = "./Loading.png";

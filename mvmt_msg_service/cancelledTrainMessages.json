@@ -1,0 +1,1 @@
+[{"type":"Cancel","train_id":"782B12MV09","op_id":"71","division_code":"71","route_origin":"Cardiff Queen Street","sub_stops_arr":[{"StationName":"Cardiff Bay","arrival":"1752"}],"service_code":"25430000","cancel_time":"1673279280000","planned_dep_time":"1673286480000","formatted_dep_time":"17:48","loc_stanox":"78451"}]
