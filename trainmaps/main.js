@@ -15,6 +15,8 @@ useGeographic();
 var scheduleData;
 var schOpen = false;
 var originLocation;
+var destName;
+var indexMap = new Map();
 
 // IT DOES NOT MATTER WHAT TYPE OF FILE USED BUT ONLY GIVE CO-ORDINATES AS FLOAT TYPES | LONG FIRST THEN LAT
 var source = new VectorSource({
@@ -42,7 +44,7 @@ var trainTextLayer = new VectorLayer({
   style: pointStyleFunction
 });
 
-const ws = new WebSocket('ws://192.168.0.220:8080/');
+const ws = new WebSocket('ws://192.168.1.12:8080/');
 
 const mapLayer = new TileLayer({
   source: new OSM(),
@@ -55,7 +57,7 @@ const map = new Map({
     center: [-0.0599408, 51.5196195],
     zoom: 15,
   }),
-})
+});
 
 ws.onopen = function() {
   const registerMsg = {type: 'register'};
@@ -64,25 +66,34 @@ ws.onopen = function() {
 }
 
 // Change the if statements to read object properties on first array index instead of using includes
-ws.onmessage = function(event) {
-  if(event.data !== "" && event.data.length > 0){
-    if(event.data.includes("geometry") && !event.data.includes("Cancelled")){
-      const jsonFile = '{"type": "FeatureCollection", "features": ' + event.data + '}';
-      const file = new File([jsonFile], {type: "application/json",});
-      URL.revokeObjectURL(source.getUrl());
-      source.setUrl(URL.createObjectURL(file));
-      source.refresh();
-      map.render();
-    }
-    else if(event.data.includes("geometry") && event.data.includes("Cancelled")){
-      console.log(event.data);
-    }
-    //THIS NEEDS TO BE AN ELSE IF, otherwise empty event data will use this
-    else if(typeof JSON.parse(event.data)[0][0].name !== "undefined"){
-      console.log("Schedule Creation Called")
-      scheduleData = JSON.parse(event.data);
-      createDestinationList(JSON.parse(event.data));
-    }
+ws.onmessage = function(event){
+  const message = JSON.parse(event.data);
+  if(typeof event.data !== "undefined" && event.data.includes("geometry")){
+    const jsonFile = '{"type": "FeatureCollection", "features": ' + event.data + '}';
+    const file = new File([jsonFile], {type: "application/json",});
+    URL.revokeObjectURL(source.getUrl());
+    source.setUrl(URL.createObjectURL(file));
+    source.refresh();
+    map.render();
+  }
+  else if(typeof message[0] !== "undefined" && message[0].type === "Cancel"){
+    console.log("Cancels Received");
+  }
+  else{
+    //if(typeof message[0] !== "undefined" && message[0].train_id){
+      //console.log("Movement Messages Received");
+      //const todaysMessages = [];
+      //const today = timeFunc(Date.now())[1];
+      //const time = timeFunc(Date.now() - 450000)[0];
+      //console.log(today);
+      //message.forEach((item) => {
+      //  const dateTime = timeFunc(Number(item.planned_time))
+      //  if(dateTime[1] == today && dateTime[0] > time && item.next_tiploc) todaysMessages.push(item);
+      //});
+      //console.log(todaysMessages);
+      console.log("Schedule Creation Called");
+      scheduleData = message;
+      createDestinationList(message);
   }
 }
 
@@ -119,6 +130,7 @@ function disposePopover() {
     popover = undefined;
   }
 }
+
 // Display popup on click
 map.on('click', function (evt) {
 
@@ -175,10 +187,9 @@ function createScheduleButton(){
 }
 
 // Open Schedule
-async function openScheduleInfo(){
+function openScheduleInfo(){
   if(schOpen === false){
     schOpen = true;
-    console.log(this.offsetParent.innerHTML)
     const tiploc = this.offsetParent.innerHTML.substring(this.offsetParent.innerHTML.indexOf("[") + 1, this.offsetParent.innerHTML.lastIndexOf("]"));
     scheduleRequest(tiploc);
     document.getElementById("scheduleInfo").style.width = "25%";
@@ -200,39 +211,46 @@ function createDestinationList(arrArr){
   const schedHead = document.createElement("h3");
   schedHead.textContent = "Select Destination:";
   document.getElementById("schContent").appendChild(schedHead);
-  // For each individual array
-  arrArr.forEach((schedArr) => {
-    schedArr.forEach((item, index, array) => {
-      const locPos = array.map(thing => thing.name).indexOf(originLocation);
-      if(!nameArr.includes(item.name) && item.name !== originLocation && index > locPos){
-        const staButt = document.createElement("button");
-        staButt.textContent = item.name;
-        staButt.addEventListener("click", stationButtonClicked, false);
-        nameArr.push(item.name);
-        document.getElementById("schContent").appendChild(staButt);
-        document.getElementById("schContent").appendChild(document.createElement('br'));
-      }
+  // Does the array of arrays have anything in it?
+  if(typeof arrArr[0] === "undefined"){
+    document.getElementById("schContent").appendChild(document.createElement('br'));
+    const notFoundMsg = document.createElement("p");
+    notFoundMsg.textContent = "A public passenger schedule was not able to be found for this train or ferry route, if you believe this is an error and a schedule should be available for this route please contact us at placeholder@email.co.uk"
+    document.getElementById("schContent").appendChild(notFoundMsg);
+  }
+  else{
+    arrArr.forEach((schedArr) => {
+      schedArr.forEach((item, index, array) => {
+        const locPos = array.map(thing => thing.name).indexOf(originLocation);
+        if(!nameArr.includes(item.name) && item.name !== originLocation && index > locPos){
+          const staButt = document.createElement("button");
+          staButt.textContent = item.name;
+          staButt.addEventListener("click", stationButtonClicked, false);
+          nameArr.push(item.name);
+          document.getElementById("schContent").appendChild(staButt);
+          document.getElementById("schContent").appendChild(document.createElement('br'));
+        }
+      });
     });
-  });
+  }
 }
 
 // CSS needs formatting
 // Need Names in correct order ie origin, dest, origin, dest rather than dest, origin, dest, origin, dest, dest etc
 function stationButtonClicked(){
-  const destName = this.outerText;
+  destName = this.outerText;
   document.getElementById("schContent").textContent = "";
   var list = [];
-  scheduleData.forEach((currArr) => {
+  scheduleData.forEach((currArr, ind, arr) => {
     // Remember these return arrays and need to be accessed as such
     // Get the origin from array
     const origin = currArr.filter(function(obj){return (obj.name === originLocation)});
     // Get the destination from array
     const dest = currArr.filter(function(obj){return (obj.name === destName)});
     // Check the destination comes after the origin before pushing
-    //console.log(origin, dest);
     if(typeof origin[0] !== "undefined" && typeof dest[0] !== "undefined" && Number(origin[0].departure) < Number(dest[0].arrival)){
       // Push items into an array so they stay together during sorting
-      list.push([origin[0], dest[0]]);
+      list.push([origin[0], dest[0], ind]);
     }
   });
   // Remove duplicates
@@ -243,12 +261,56 @@ function stationButtonClicked(){
     else if(a[0].departure != "undefined" && b[0].departure != "undefined") return a[0].departure - b[0].departure;
   });
   // Add to DOM
-  //const domList = document.createElement("li");
-  //document.getElementById("schContent").textContent = list;
-  console.log(list);
+  const domList = document.createElement("ol");
+  const depArr = document.createElement("h3");
+  depArr.textContent = "Departure | Arrival";
+  depArr.style.textDecorationLine = "underline";
+  const hintMsg = document.createElement("p");
+  hintMsg.textContent = "Click an item to see the full route with stops";
+  document.getElementById("schContent").appendChild(depArr);
+  document.getElementById("schContent").appendChild(hintMsg);
+  list.forEach((item) => {
+    indexMap.set(item[0].departure, item[2]);
+    const butObj = document.createElement("a");
+    butObj.textContent = item[0].name + ": " + item[0].departure + " | " + item[1].name + ": " + item[1].arrival;
+    butObj.setAttribute("href", "#");
+    butObj.addEventListener("click", testTimeButt, false);
+    domList.appendChild(butObj);
+  });
+  document.getElementById("schContent").appendChild(domList);
 }
 
+function testTimeButt(){
+  var index = indexMap.get(this.outerText.substring(this.outerText.indexOf(":") + 2, this.outerText.indexOf("|") - 1));
+  var tableList = [];
+  var originPassed = false;
+  var destinationPassed = false;
+  scheduleData[index].forEach((item) => {
+    if(item.name === originLocation) originPassed = true;
+    if(originPassed === true && destinationPassed === false) tableList.push(item);
+    if(item.name === destName) destinationPassed = true;
+  });
+  console.log(tableList);
+}
+
+
+
+
 /*
+function timeFunc(dateGiven){
+  const today = new Date(dateGiven);
+  var time = "";
+  var hrs = today.getHours();
+  if(String(hrs).length < 2){hrs = "0" + hrs}
+  var mins = today.getMinutes();
+  if(String(mins).length < 2){mins = "0" + mins}
+  if(today.getSeconds() > 30){time = String(hrs) + String(mins) + "H"}else{time = String(hrs) + String(mins)}
+  const date = today.getDate();
+  return [time, date];
+}
+
+
+
   const listObj = document.createElement("p");
   listObj.textContent = schedItem.name + " Departure: " + schedItem.departure;
   domList.appendChild(listObj);

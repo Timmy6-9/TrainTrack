@@ -32,6 +32,8 @@
 
 <style>
 
+  /* Need the cancellation ticker to move over when shcedule sidebar opens */
+
   @keyframes slideLeft{
     from {
       transform: translateX(100%);
@@ -66,7 +68,7 @@
   }
 
   .scheduleDisplay {
-    position: absolute;
+    position: fixed;
     height: 100%; width: 0%;
     top: 0; left: 0;
     background-color: #FFFFFF;
@@ -93,19 +95,22 @@
   }
 
   .scheduleDisplayContent{
+    display: flex;
+    flex-direction: column;
+    flex-basis: auto;
     margin: auto;
-    overflow: scroll;
+    text-align: center;
   }
 
   img{
-    position: absolute;
+    position: fixed;
     margin-top: 50%;
     margin-left: 30%;
     animation: 0.5s linear 1 normal forwards running fadeIn, 2.5s linear infinite normal forwards running rotateImg;
   }
 
   .ticker{
-    position: absolute;
+    position: fixed;
     height: fit-content;
     width: 100%;
     background-color: blue;
@@ -118,7 +123,7 @@
   .tickerContent{
     height: auto;
     width: 100%;
-    position: absolute;
+    position: fixed;
     overflow:hidden;
     animation: 5s linear 1 normal forwards running slideLeft;
   }

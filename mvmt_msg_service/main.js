@@ -64,7 +64,7 @@ const locationStaMap = new Map();
 const uri = "mongodb://127.0.0.1:27017/ScheduleDB";
 const client = new MongoClient(uri);
 const db = client.db('ScheduleStore');
-const coll = db.collection('DailyCollection_2022-01-09');
+const coll = db.collection('DailyCollection_2022-01-14');
 const locColl = db.collection('Tiploc_Stanox_Locations');
 
 // Remove ipv6 header if address is ipv4
@@ -94,9 +94,10 @@ wss.on('connection', function connection(ws, req){
         }
         else if(msg.type == 'scheduleReq'){
             const schedule = await findSchedule(msg.tiploc);
+            //client.send(JSON.stringify(filteredMessages));
             wss.clients.forEach(function each(client){
                 if (client === ws){
-                  client.send(JSON.stringify(schedule));
+                    client.send(JSON.stringify(schedule));
                 }
             });
         }
@@ -191,12 +192,12 @@ connectionManager.connect(function (error, client, reconnect) {
                                     "op_id": item.body.toc_id, // Operator ID
                                     "division_code": item.body.division_code, // Div Code
                                     "route_origin": "To Be Filled",
-                                    "sub_stops_arr": "To Be Filled",
                                     "service_code": item.body.train_service_code, // Service code, for narrowing down search results
                                     "cancel_time": item.body.canx_timestamp, // Time the train was cancelled
                                     "planned_dep_time": item.body.dep_timestamp, // Time the train would have departed the location
                                     "formatted_dep_time": "To Be Filled",
-                                    "loc_stanox": "To Be Filled"
+                                    "loc_stanox": "To Be Filled",
+                                    "sub_stops_arr": "To Be Filled"
                                 }
                                 if(typeof item.body.orig_loc_stanox === "undefined"){
                                     cancelObj.loc_stanox = item.body.loc_stanox;
@@ -222,9 +223,9 @@ connectionManager.connect(function (error, client, reconnect) {
                                                 const canOb = {
                                                     "StationName": locationTipMap.get(schedArr[n].tiploc_code).Name,
                                                 }
-                                                if(typeof schedArr[n].public_arrival !== "undefined")   canOb.arrival = schedArr[n].public_arrival;
-                                                if(typeof schedArr[n].public_departure !== "undefined") canOb.departure = schedArr[n].public_departure;
-                                                stopsArr.push(canOb);
+                                                if(typeof schedArr[n].public_arrival !== "undefined" && schedArr[n].public_arrival !== null){canOb.arrival = schedArr[n].public_arrival}
+                                                if(typeof schedArr[n].public_departure !== "undefined" && schedArr[n].public_departure !== null){canOb.departure = schedArr[n].public_departure}
+                                                if(typeof canOb.arrival !== "undefined" || typeof canOb.departure !== "undefined"){stopsArr.push(canOb)}
                                             }
                                         }
                                         console.log(formatTime + " from " + locationStaMap.get(cancelObj.loc_stanox).Name + " has been cancelled");
@@ -251,6 +252,7 @@ connectionManager.connect(function (error, client, reconnect) {
                                     "planned_time": item.body.planned_timestamp, // Time this train was due to arrive/depart the location in the schedule
                                     "actual_time": item.body.actual_timestamp // Time the train actually arrived/departed the location
                                 }
+                                if(item.body.next_report_stanox) movementObj.next_stanox = item.body.next_report_stanox;
                                 newMovements[moveCount] = movementObj;
                                 moveCount++;
                             }
@@ -389,39 +391,6 @@ async function checkSavedMessages(){
         return [day, date, time];
     }
 
-    // Find better ways to filter this data and apply it to routes/services
-    async function findSchedule(tiploc){
-        const dateTime = currentDate(Date.now());
-        const dayOfWeek = dateTime[0];
-        const date = dateTime[1];
-        const time = dateTime[2];
-        // Use $gte and $lte to query the start and end of schedule dates against the current day
-        const scheduleData = coll.find({"JsonScheduleV1.transaction_type": "Create", "JsonScheduleV1.train_status": {$not: {$eq:"F"}}, "JsonScheduleV1.schedule_days_runs": dayOfWeek, "JsonScheduleV1.schedule_segment.schedule_location": {"$elemMatch": {"tiploc_code": tiploc, "public_departure": {$gte: time}}}, "JsonScheduleV1.schedule_start_date": {$lte: date}, "JsonScheduleV1.schedule_end_date": {$gte: date}});
-        const scheduleArray = await scheduleData.toArray();
-        var timetables = getFormattedTimetable(scheduleArray);
-        console.log(tiploc);
-        return timetables;
-    }
-
-    // These need to be objects for formatting on the client side
-    function getFormattedTimetable(arr){
-        var timetables = [];
-        for(i = 0; i < arr.length; i++){
-            var timetable = [];
-            const locs = arr[i].JsonScheduleV1.schedule_segment.schedule_location;
-            for(x = 0; x < locs.length; x++){
-                var timeObj = {"name": locationTipMap.get(locs[x].tiploc_code).Name}
-                if(typeof locs[x].public_arrival !== "undefined" && locs[x].public_arrival !== null){timeObj.arrival = locs[x].public_arrival}
-                if(typeof locs[x].public_departure !== "undefined" && locs[x].public_departure !== null){timeObj.departure = locs[x].public_departure}
-                if(typeof Object.values(timeObj)[1] !== "undefined" || typeof Object.values(timeObj)[2] !== "undefined"){
-                    timetable.push(timeObj);
-                }
-            }
-            timetables.push(timetable);
-        }
-        return timetables;
-    }
-
     // Service Code required, tiploc required, NEED TO INCLUDE HEADCODE FROM TRAIN ID
     // Search for the names of stations affected by a cancellation message
     async function getCancelledRoute(cancelledTrain, cancelTiploc){
@@ -458,13 +427,21 @@ async function checkSavedMessages(){
             locationTipMap.set(item.Tiploc, item);
             locationStaMap.set(item.Stanox, item);
         });
-        var passengerLocationData = locColl.find({"Tiploc": {$exists: true}, "Name": {$exists: true}, "Details/OffNetwork": "false", $nor: [ {"Details/TPS_StationType": "NotSet"}, {"Details/TPS_StationType": "RoutingOnly"} ], $nor: [ {"Details/TPS_StationCategory": "NonPassengerOrOperational"}, {"Details/TPS_StationCategory": "FreightYard"}] }).project({Tiploc: 1, Name: 1, DisplayName: 1, Stanox: 1, Latitude: 1, Longitude: 1 ,_id: 0});
-        var passengerLocationArray = await passengerLocationData.toArray();
         console.log("Mapping location names finished");
-        console.log("Active Stations Mapped: " + locationTipMap.size);
+        console.log("Total Locations Mapped: " + locationTipMap.size);
         // Find active stations
         console.log("Collation of active stations started...");
-        passengerLocationArray.forEach((item) => {
+        var activeLocations = locColl.find({"Details/OffNetwork": "false", $nor: [{"Details/TPS_StationCategory": "NonPassengerOrOperational"}, {"Details/TPS_StationCategory": "NonPassenger"}, {"Details/TPS_StationCategory": "FreightYard"}, {"Details/TPS_StationCategory": "CrossingOnly"}, {"Details/TPS_StationType": "RoutingOnly"}]}).project({Tiploc: 1, Name: 1, DisplayName: 1, Stanox: 1, Latitude: 1, Longitude: 1 ,_id: 0});
+        var activeLocArr = await activeLocations.toArray();
+        const excludedTiplocs = ["VICTRIA", "ANSL3", "OKHMPWS", "HOLSLIB", "HOLSCHR", "MINEHED", "OKHMPWS", "TRECWN", "MLFDOCK", "MGTLSR", "BUDESTD"];
+        // Proof my regular expressions need a lot of work
+        const sigReg = new RegExp('Sig+\.'); const sidReg = new RegExp('\W?Siding.?'); const busReg = new RegExp('.+Bus+'); const crossReg = new RegExp('.+Crossover+.'); const crossReg2 = new RegExp('.+Crossing+.'); const jnReg = new RegExp('.+Jn.?');
+        activeLocArr = await activeLocArr.filter(function(item){
+            if(!sigReg.test(item.Name) && !sidReg.test(item.Name) && !busReg.test(item.Name) && !crossReg.test(item.Name) && !crossReg2.test(item.Name) && !jnReg.test(item.Name) && !item.Name.includes("Training") && !item.Name.includes("Test") && !item.Name.includes("Loop") && !item.Name.includes("Construction") && !item.Name.includes("Proposed") && !item.Name.includes("DBCargo") && !item.Name.includes("DB Cargo") && !item.Name.includes("LUL") && !item.Name.includes("L.T") && !item.Name.includes("DMU") && !item.Name.includes("FLHH") && !item.Name.includes("G.F.") && !item.Name.includes("GBRf") && !item.Name.includes("Lathe") && !item.Name.includes("Freight") && !excludedTiplocs.includes(item.Tiploc)){
+                return item;
+            }
+        });
+        activeLocArr.forEach((item) => {
             const fileObj = {
                 "type": "Feature",
                 "geometry": {
@@ -477,19 +454,72 @@ async function checkSavedMessages(){
                 "stanox": item.Stanox
                 },
             }
+            console.log("'"+fileObj.properties.name+"'");
             if(item.Name !== item.DisplayName) fileObj.name = item.DisplayName;
             collatedStations.push(fileObj);
         });
         console.log("Collation of active stations finished");
-        console.log("Stations Collated: " + collatedStations.length);
-
+        console.log("Active Stations Collated: " + collatedStations.length);
     }
 
 getLocations();
-
 checkSavedMessages();
 
+    // Find better ways to filter this data and apply it to routes/services
+    async function findSchedule(tiploc){
+        const dateTime = currentDate(Date.now());
+        const dayOfWeek = dateTime[0];
+        const date = dateTime[1];
+        const time = dateTime[2];
+        const scheduleData = coll.find({"JsonScheduleV1.transaction_type": "Create", "JsonScheduleV1.train_status": {$not: {$eq:"F"}}, "JsonScheduleV1.schedule_days_runs": dayOfWeek, "JsonScheduleV1.schedule_segment.schedule_location": {"$elemMatch": {"tiploc_code": tiploc, "public_departure": {$gte: time}}}, "JsonScheduleV1.schedule_start_date": {$lte: date}, "JsonScheduleV1.schedule_end_date": {$gte: date}});
+        const scheduleArray = await scheduleData.toArray();
+        var timetables = getFormattedTimetable(scheduleArray);
+        console.log(tiploc);
+        return timetables;
+    }
 
+    // These need to be objects for formatting on the client side
+    function getFormattedTimetable(arr){
+        var timetables = [];
+        for(i = 0; i < arr.length; i++){
+            var timetable = [];
+            const locs = arr[i].JsonScheduleV1.schedule_segment.schedule_location;
+            for(x = 0; x < locs.length; x++){
+                var timeObj = {"name": locationTipMap.get(locs[x].tiploc_code).Name}
+                if(typeof locs[x].public_arrival !== "undefined" && locs[x].public_arrival !== null){timeObj.arrival = locs[x].public_arrival}
+                if(typeof locs[x].public_departure !== "undefined" && locs[x].public_departure !== null){timeObj.departure = locs[x].public_departure}
+                if(typeof Object.values(timeObj)[1] !== "undefined" || typeof Object.values(timeObj)[2] !== "undefined"){
+                    timetable.push(timeObj);
+                }
+            }
+            timetables.push(timetable);
+        }
+        return timetables;
+    }
+
+
+
+
+
+// Arrival estimate Code
+// Get movement message for this service code + tiploc combo
+/*
+var filteredMessages = [];
+const noDupes = new Set(schedulePlusSrvCode[1]);
+noDupes.forEach((item) => {
+    filteredMessages = movementArray.filter((obj) => {
+        if(obj.planned_time > (Date.now() - 86400000) && item.next_stanox){
+            item.current_tiploc = locationStaMap.get(item.stanox_code).Tiploc;
+            item.next_tiploc = locationStaMap.get(item.next_stanox).Tiploc;
+            return obj.service_code === item;
+        }
+    });
+});
+*/
+
+//  "Name":{$not: }, "Name": {$not: }
+//var passengerLocationData = locColl.find({"Tiploc": {$exists: true}, "Details/OffNetwork": "false","Name": {$not: {$regex: '\W?Siding$', $options: "si"}}, "Name": {$not: {$regex: 'Sidings$', $options: "si"}}, $nor: [{"Name": /.+Crossover+./}, {"Name": /.+Jn*/}, {"Name": /.+Bus+./}, {"Name": /.+Sig+\./}, {"Details/TPS_StationCategory": "NonPassengerOrOperational"}, {"Details/TPS_StationCategory": "NonPassenger"}, {"Details/TPS_StationCategory": "FreightYard"}, {"Details/TPS_StationCategory": "CrossingOnly"}, {"Details/TPS_StationType": "NotSet"}, {"Details/TPS_StationType": "RoutingOnly"}]}).project({Tiploc: 1, Name: 1, DisplayName: 1, Stanox: 1, Latitude: 1, Longitude: 1 ,_id: 0});
+//var passengerLocationArray = await passengerLocationData.toArray();
 //var locationData = locColl.find({"Tiploc": {$exists: true}, "Name": {$exists: true}, "Details/OffNetwork": "false", $nor: [ {"Details/TPS_StationType": "NotSet"}, {"Details/TPS_StationType": "RoutingOnly"} ], $nor: [ {"Details/TPS_StationCategory": "NonPassengerOrOperational"}, {"Details/TPS_StationCategory": "FreightYard"}] }).project({Tiploc: 1, Name: 1, DisplayName: 1, Stanox: 1, Latitude: 1, Longitude: 1 ,_id: 0});
 
 // Look for Train Movement messages (0003)
