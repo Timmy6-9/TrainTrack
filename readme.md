@@ -1,21 +1,12 @@
-Current Features:
+See a video demonstration here:
+https://youtu.be/9igy01oNaMs
 
-Client Side/Frontend:
-- Shows locations of any stations with an active schedule for the rest of the day from the point at which it was restarted | Currently works with ~2400 stations, may need to change/add some manually
-- Clicking the schedule button for a location will bring up a list of destinations, when one is clicked it will show a list of train times from the origin location to the the selected destination (Currently in console)
+This is my first vanilla full stack project, using javascript for the frontend as well as the backend with the node.js runtime. 
 
-Server Side/Backend:
-- Collates relevant data from train movement messages into an array and sends the array to client via websocket connection every heartbeat (currently 15 seconds)
-- Handles cancellations and terminations, sends cancellations to client (Cancellations will be displayed on a ticker at the bottom of the screen)
-- Collects schedule information for a chosen location on request from clients using current time/date combined with a tiploc code and sends all available data for ordering/formatting
-- Uses MySQL and MongoDB to return information about locations and schedules (Current plan is to move to just MongoDB as it's much faster and a relational database isn't needed)
+The objective was originally to show trains moving on a map in near real-time by utilizing the public data feeds provided by National Rail, however this eventually turned into showing the stations on a map and having the ability to select both a start and destination from the map to retrieve schedules from a database.
 
-Planned features:
-- Ability to select 2 stations on the map and get schedule, stops etc. between the 2
-- Actual arrival time estimates using message data
-- Ability to get a schedule from any location to another (within the realms of possibility), with stops and changes shown
-- Highlighting of both origin and destination stations on the map with little start and finish tags, with change/stop tags for train changes
-- Filtering displayed stations by train operator
-- Use of geolocation API to suggest a station to use
-- All UK passenger services to be displayed rather than just the London Overground feed
-- Automate schedule updating as much as possible and implement automatic nightly (~4am) server restarts
+Routes with up to 5 changes can be retrieved and it's possible to use either a search bar or the icons on the map to select a start and destination. There is also the option to select a station and see all the direct routes (without changes).
+
+The reasons I've stopped working on this project are because most further changes I could make would require quite a lot of time spent working on making the frontend look prettier or collating information about stations myself which would distract from the purpose of the project, which is to improve my coding abilities.
+
+My one regret for this project is not writing it in Typescript, quite a few errors would have been much easier to trace or fix.
