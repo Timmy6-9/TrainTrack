@@ -21,9 +21,9 @@ Openlayers for open source dynamic map api
 
 Non-exhaustive list of libraries and programs used: 
 
-Javascript
-Node.js/Node package manager
-MongoDB/Percona Server for MongoDB
-Bash/WSL
-Websockets/ws library
+Javascript \n
+Node.js/Node package manager \n
+MongoDB/Percona Server for MongoDB \n
+Bash/WSL \n
+Websockets/ws library \n
 OpenLayers
