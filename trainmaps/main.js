@@ -528,6 +528,8 @@ function listLongTimes(){
     document.getElementById("schContent").appendChild(domList);
     scheduleData = finalRoutesArr;
   }
+  originTip = undefined;
+  destTip = undefined;
 }
 
 // Same as the above function but accounts for changes
@@ -720,7 +722,13 @@ function searchForStations(){
 
     console.log(startTip, destTip);
 
-    if(typeof startTip !== "undefined" && typeof destTip !== "undefined") scheduleRequest(startTip, destTip);
+    if(typeof startTip !== "undefined" && typeof destTip !== "undefined"){
+      document.getElementById("schContent").textContent = "";
+      const loadingImg = document.createElement("img");
+      loadingImg.src = "./Loading.png";
+      document.getElementById("schContent").appendChild(loadingImg);
+      scheduleRequest(startTip, destTip)
+    }
   });
 
   // Autocomplete
