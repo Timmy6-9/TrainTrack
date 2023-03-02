@@ -10,3 +10,20 @@ Routes with up to 5 changes can be retrieved and it's possible to use either a s
 The reasons I've stopped working on this project are because most further changes I could make would require quite a lot of time spent working on making the frontend look prettier or collating information about stations myself which would distract from the purpose of the project, which is to improve my coding abilities.
 
 My one regret for this project is not writing it in Typescript, quite a few errors would have been much easier to trace or fix.
+
+Attributions: 
+
+Liam Crozier (https://railmap.azurewebsites.net) for Tiploc to co-ordinate mapping without which the original intention and work on this project would not have been possible.
+
+Open Street Maps for open source map data
+
+Openlayers for open source dynamic map api
+
+Non-exhaustive list of libraries and programs used: 
+
+Javascript
+Node.js/Node package manager
+MongoDB/Percona Server for MongoDB
+Bash/WSL
+Websockets/ws library
+OpenLayers
