@@ -1,4 +1,7 @@
+# TrainTrack
+
 See a video demonstration here:
+
 https://youtu.be/9igy01oNaMs
 
 This is my first vanilla full stack project, using javascript for the frontend as well as the backend with the node.js runtime. 
@@ -11,7 +14,7 @@ The reasons I've stopped working on this project are because most further change
 
 My one regret for this project is not writing it in Typescript, quite a few errors would have been much easier to trace or fix.
 
-Attributions: 
+## **Attributions:**
 
 Liam Crozier (https://railmap.azurewebsites.net) for Tiploc to co-ordinate mapping without which the original intention and work on this project would not have been possible.
 
@@ -19,11 +22,11 @@ Open Street Maps for open source map data
 
 Openlayers for open source dynamic map api
 
-Non-exhaustive list of libraries and programs used: 
+### <ins> Non-exhaustive list of libraries and programs used: </ins>
 
-Javascript \n
-Node.js/Node package manager \n
-MongoDB/Percona Server for MongoDB \n
-Bash/WSL \n
-Websockets/ws library \n
-OpenLayers
+- Javascript
+- Node.js/Node package manager
+- MongoDB/Percona Server for MongoDB
+- Bash/WSL
+- Websockets/ws library
+- OpenLayers
