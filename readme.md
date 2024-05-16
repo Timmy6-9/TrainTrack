@@ -18,9 +18,9 @@ My one regret for this project is not writing it in Typescript, quite a few erro
 
 Liam Crozier (https://railmap.azurewebsites.net) for Tiploc to co-ordinate mapping without which the original intention and work on this project would not have been possible.
 
-Open Street Maps for open source map data
+Open Street Maps for high quality open source map data.
 
-Openlayers for open source dynamic map api
+OpenLayers for an open source dynamic map API.
 
 ### <ins> Non-exhaustive list of libraries and programs used: </ins>
 
