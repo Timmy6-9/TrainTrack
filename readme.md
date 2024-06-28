@@ -2,7 +2,7 @@
 
 See a video demonstration here:
 
-https://www.youtube.com/embed/9igy01oNaMs?si=-qe0g_7e_Hjj94vx
+https://www.youtube.com/watch?v=9igy01oNaMs
 
 This is my first vanilla full stack project, using javascript for the frontend as well as the backend with the node.js runtime. 
 
