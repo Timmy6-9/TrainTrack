@@ -2,7 +2,7 @@
 
 See a video demonstration here:
 
-https://youtu.be/9igy01oNaMs
+<iframe width="560" height="315" src="https://www.youtube.com/embed/9igy01oNaMs?si=-qe0g_7e_Hjj94vx" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 This is my first vanilla full stack project, using javascript for the frontend as well as the backend with the node.js runtime. 
 
